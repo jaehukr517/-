@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D 미니 야구 게임 (오프라인)</title>
+  <style>
+    html, body { margin:0; height:100%; overflow:hidden; background:#0b1020; color:#fff; font-family:system-ui,sans-serif; }
+    canvas { display:block; width:100vw; height:100vh; }
+    #hud { position:fixed; top:12px; left:12px; background:rgba(0,0,0,.5); padding:10px 12px; border-radius:10px; line-height:1.5; z-index:10; }
+    #hud b { color:#8ee6ff; }
+    #msg { margin-top:6px; font-size:13px; color:#ffd27d; }
+    #help { position:fixed; bottom:12px; left:12px; background:rgba(0,0,0,.35); padding:8px 10px; border-radius:10px; font-size:13px; }
+    button { border:0; border-radius:8px; padding:6px 10px; background:#1e90ff; color:white; font-weight:600; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="hud">
+    점수: <b id="score">0</b> / 투구: <b id="pitch">0</b> / 스트라이크: <b id="strike">0</b>
+    <div id="msg">스페이스바로 스윙!</div>
+    <button id="reset">다시 시작</button>
+  </div>
+  <div id="help">조작: <b>스페이스</b> 스윙 · <b>R</b> 리셋 · 외부 라이브러리 없이 실행됨</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+function resize(){ canvas.width=innerWidth*devicePixelRatio; canvas.height=innerHeight*devicePixelRatio; ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);} addEventListener('resize',resize); resize();
+
+const ui={score:score,pitch:pitch,strike:strike,msg:msg};
+let scoreV=0,pitchV=0,strikeV=0,swingT=0,state='pitching';
+
+const cam={x:0,y:2,z:12,fov:520};
+const ball={x:0,y:1.4,z:-18,vx:0,vy:0,vz:0.38,hx:0,hy:0,hz:0};
+
+function updateHUD(){ ui.score.textContent=scoreV; ui.pitch.textContent=pitchV; ui.strike.textContent=strikeV; }
+function resetPitch(){ ball.x=(Math.random()-0.5)*1.0; ball.y=1.2+Math.random()*1.2; ball.z=-18; ball.vx=(Math.random()-0.5)*0.03; ball.vy=(Math.random()-0.5)*0.02; ball.vz=0.34+Math.random()*0.08; ball.hx=ball.hy=ball.hz=0; state='pitching'; }
+function resetGame(){ scoreV=0; pitchV=0; strikeV=0; ui.msg.textContent='스페이스바로 스윙!'; updateHUD(); resetPitch(); }
+
+function proj(x,y,z){ const dz=(z-cam.z); const s=cam.fov/Math.max(1, (dz+28)); return {x:innerWidth/2 + (x-cam.x)*s, y:innerHeight/2 - (y-cam.y)*s, s}; }
+function circle3D(x,y,z,r,c){ const p=proj(x,y,z); ctx.beginPath(); ctx.fillStyle=c; ctx.arc(p.x,p.y,Math.max(1,r*p.s),0,Math.PI*2); ctx.fill(); }
+function line3D(a,b,w,c){ const pa=proj(a.x,a.y,a.z), pb=proj(b.x,b.y,b.z); ctx.strokeStyle=c; ctx.lineWidth=Math.max(1,w*(pa.s+pb.s)*0.5); ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y); ctx.stroke(); }
+
+function swing(){ if(swingT>0) return; swingT=0.2; if(state!=='pitching') return; const dz=Math.abs(ball.z-0.8), dx=Math.abs(ball.x-0.7), dy=Math.abs(ball.y-1.5); if(dz<1.6&&dx<1.0&&dy<1.0){ state='hit'; const p=Math.max(0.8,2.0-dz*0.75); ball.hx=(Math.random()-0.5)*0.2; ball.hy=0.35+p*0.18; ball.hz=0.9+p*0.6; const plus=Math.floor(10*p); scoreV+=plus; ui.msg.textContent=`안타! +${plus}점`; } else { strikeV++; ui.msg.textContent='헛스윙!'; } pitchV++; updateHUD(); }
+
+addEventListener('keydown',e=>{ if(e.code==='Space'){e.preventDefault(); swing();} if(e.key.toLowerCase()==='r') resetGame(); });
+reset.onclick=resetGame;
+
+function drawField(){
+  const sky=ctx.createLinearGradient(0,0,0,innerHeight); sky.addColorStop(0,'#7ec8ff'); sky.addColorStop(1,'#d9f3ff'); ctx.fillStyle=sky; ctx.fillRect(0,0,innerWidth,innerHeight);
+  for(let z=-30; z<40; z+=1){
+    const t=(z+30)/70; const c=`rgb(${30+20*t},${120+50*t},${40+20*t})`; line3D({x:-20,y:0,z},{x:20,y:0,z},0.04,c);
+  }
+  circle3D(0,0,0,0.8,'#fff');
+  circle3D(0,0,-18,1.1,'#b68655');
+  line3D({x:-0.8,y:0,z:0.7},{x:0.8,y:0,z:0.7},0.05,'#fff');
+}
+
+function loop(){
+  ctx.clearRect(0,0,innerWidth,innerHeight);
+  drawField();
+
+  if(swingT>0) swingT-=1/60;
+
+  if(state==='pitching'){
+    ball.x+=ball.vx; ball.y+=ball.vy; ball.z+=ball.vz;
+    if(ball.z>2.2){
+      if(strikeV>=2){ ui.msg.textContent='삼진! R키로 재시작'; state='over'; }
+      else { strikeV++; pitchV++; ui.msg.textContent='스트라이크!'; updateHUD(); resetPitch(); }
+    }
+  } else if(state==='hit'){
+    ball.hy-=0.018; ball.x+=ball.hx; ball.y+=ball.hy; ball.z+=ball.hz;
+    if(ball.y<=0.24){ ball.y=0.24; ball.hx*=0.6; ball.hz*=0.6; ball.hy*=-0.3; }
+    if(Math.hypot(ball.x,ball.y,ball.z)>180 || Math.hypot(ball.hx,ball.hy,ball.hz)<0.03) resetPitch();
+  }
+
+  // pitcher
+  circle3D(0,1.8,-18,0.6,'#224488');
+  circle3D(0,3.0,-18,0.35,'#f5c9a8');
+  // bat
+  const sw=Math.sin(Math.max(0,1-swingT/0.2)*Math.PI)*-1.3;
+  const bx1=0.8+Math.cos(sw)*-1.2, bz1=1.2+Math.sin(sw)*-1.2;
+  const bx2=0.8+Math.cos(sw)*1.4, bz2=1.2+Math.sin(sw)*1.4;
+  line3D({x:bx1,y:1.3,z:bz1},{x:bx2,y:1.7,z:bz2},0.09,'#c68642');
+
+  circle3D(ball.x,ball.y,ball.z,0.24,'#fff');
+  requestAnimationFrame(loop);
+}
+
+resetGame(); loop();
+</script>
+</body>
+</html>
